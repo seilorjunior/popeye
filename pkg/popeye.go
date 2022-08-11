@@ -17,9 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/common/expfmt"
-	"k8s.io/apimachinery/pkg/version"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
@@ -30,6 +27,7 @@ import (
 	"github.com/derailed/popeye/internal/scrub"
 	"github.com/derailed/popeye/pkg/config"
 	"github.com/derailed/popeye/types"
+	"github.com/prometheus/common/expfmt"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -86,7 +84,7 @@ func (p *Popeye) Init() error {
 			return err
 		}
 	}
-	rev, err := p.factory.Client().ServerVersion()
+	rev, err := p.revision()
 	if err != nil {
 		return err
 	}
@@ -111,7 +109,7 @@ func (p *Popeye) SetFactory(f types.Factory) {
 	p.factory = f
 }
 
-func (p *Popeye) scannedGVRs(rev *version.Info) []string {
+func (p *Popeye) scannedGVRs(rev *client.Revision) []string {
 	mm := []string{
 		"v1/limitranges",
 		"v1/services",
@@ -128,20 +126,28 @@ func (p *Popeye) scannedGVRs(rev *version.Info) []string {
 		"apps/v1/replicasets",
 		"apps/v1/daemonsets",
 		"apps/v1/statefulsets",
-		"policy/v1beta1/poddisruptionbudgets",
 		"policy/v1beta1/podsecuritypolicies",
 		"networking.k8s.io/v1/networkpolicies",
-		"autoscaling/v1/horizontalpodautoscalers",
 		"rbac.authorization.k8s.io/v1/clusterroles",
 		"rbac.authorization.k8s.io/v1/clusterrolebindings",
 		"rbac.authorization.k8s.io/v1/roles",
 		"rbac.authorization.k8s.io/v1/rolebindings",
 	}
 
-	if rev.Minor == "18+" || rev.Minor == "17+" {
+	if rev.Minor <= 18 {
 		mm = append(mm, "networking.k8s.io/v1beta1/ingresses")
 	} else {
 		mm = append(mm, "networking.k8s.io/v1/ingresses")
+	}
+	if rev.Minor >= 21 {
+		mm = append(mm, "policy/v1/poddisruptionbudgets")
+	} else {
+		mm = append(mm, "policy/v1beta1/poddisruptionbudgets")
+	}
+	if rev.Minor >= 23 {
+		mm = append(mm, "autoscaling/v2/horizontalpodautoscalers")
+	} else {
+		mm = append(mm, "autoscaling/v1/horizontalpodautoscalers")
 	}
 
 	return mm
@@ -158,13 +164,19 @@ func (p *Popeye) initFactory() error {
 	if p.flags.StandAlone {
 		return nil
 	}
+
+	info, err := p.factory.Client().ServerVersion()
+	if err != nil {
+		return err
+	}
+	rev, err := client.NewRevision(info)
+	if err != nil {
+		return err
+	}
+
 	ns := client.AllNamespaces
 	if p.flags.ConfigFlags.Namespace != nil {
 		ns = *p.flags.ConfigFlags.Namespace
-	}
-	rev, err := p.factory.Client().ServerVersion()
-	if err != nil {
-		return err
 	}
 
 	f.Start(ns)
@@ -182,35 +194,52 @@ func (p *Popeye) initFactory() error {
 	return nil
 }
 
-func (p *Popeye) sanitizers(rev *version.Info) map[string]scrubFn {
+func (p *Popeye) revision() (*client.Revision, error) {
+	info, err := p.factory.Client().ServerVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	return client.NewRevision(info)
+}
+
+func (p *Popeye) sanitizers(rev *client.Revision) map[string]scrubFn {
 	mm := map[string]scrubFn{
-		"cluster":                   scrub.NewCluster,
-		"v1/configmaps":             scrub.NewConfigMap,
-		"v1/namespaces":             scrub.NewNamespace,
-		"v1/nodes":                  scrub.NewNode,
-		"v1/pods":                   scrub.NewPod,
-		"v1/persistentvolumes":      scrub.NewPersistentVolume,
-		"v1/persistentvolumeclaims": scrub.NewPersistentVolumeClaim,
-		"v1/secrets":                scrub.NewSecret,
-		"v1/services":               scrub.NewService,
-		"v1/serviceaccounts":        scrub.NewServiceAccount,
-		"apps/v1/daemonsets":        scrub.NewDaemonSet,
-		"apps/v1/deployments":       scrub.NewDeployment,
-		"apps/v1/replicasets":       scrub.NewReplicaSet,
-		"apps/v1/statefulsets":      scrub.NewStatefulSet,
-		"autoscaling/v1/horizontalpodautoscalers":          scrub.NewHorizontalPodAutoscaler,
-		"networking.k8s.io/v1/ingresses":                   scrub.NewIngress,
-		"networking.k8s.io/v1/networkpolicies":             scrub.NewNetworkPolicy,
-		"policy/v1beta1/poddisruptionbudgets":              scrub.NewPodDisruptionBudget,
-		"policy/v1beta1/podsecuritypolicies":               scrub.NewPodSecurityPolicy,
-		"rbac.authorization.k8s.io/v1/clusterroles":        scrub.NewClusterRole,
+		"cluster":                                   scrub.NewCluster,
+		"v1/configmaps":                             scrub.NewConfigMap,
+		"v1/namespaces":                             scrub.NewNamespace,
+		"v1/nodes":                                  scrub.NewNode,
+		"v1/pods":                                   scrub.NewPod,
+		"v1/persistentvolumes":                      scrub.NewPersistentVolume,
+		"v1/persistentvolumeclaims":                 scrub.NewPersistentVolumeClaim,
+		"v1/secrets":                                scrub.NewSecret,
+		"v1/services":                               scrub.NewService,
+		"v1/serviceaccounts":                        scrub.NewServiceAccount,
+		"apps/v1/daemonsets":                        scrub.NewDaemonSet,
+		"apps/v1/deployments":                       scrub.NewDeployment,
+		"apps/v1/replicasets":                       scrub.NewReplicaSet,
+		"apps/v1/statefulsets":                      scrub.NewStatefulSet,
+		"networking.k8s.io/v1/networkpolicies":      scrub.NewNetworkPolicy,
+		"networking.k8s.io/v1/ingresses":            scrub.NewIngress,
+		"policy/v1beta1/podsecuritypolicies":        scrub.NewPodSecurityPolicy,
+		"rbac.authorization.k8s.io/v1/clusterroles": scrub.NewClusterRole,
 		"rbac.authorization.k8s.io/v1/clusterrolebindings": scrub.NewClusterRoleBinding,
 		"rbac.authorization.k8s.io/v1/roles":               scrub.NewRole,
 		"rbac.authorization.k8s.io/v1/rolebindings":        scrub.NewRoleBinding,
 	}
 
-	if rev.Minor == "18+" || rev.Minor == "17+" {
+	if rev.Minor <= 18 {
 		mm["networking.k8s.io/v1beta1/ingresses"] = scrub.NewIngress
+	}
+	if rev.Minor >= 21 {
+		mm["policy/v1/poddisruptionbudgets"] = scrub.NewPodDisruptionBudget
+	} else {
+		mm["policy/v1beta1/poddisruptionbudgets"] = scrub.NewPodDisruptionBudget
+	}
+	if rev.Minor >= 23 {
+		mm["autoscaling/v2/horizontalpodautoscalers"] = scrub.NewHorizontalPodAutoscaler
+	} else {
+		mm["autoscaling/v1/horizontalpodautoscalers"] = scrub.NewHorizontalPodAutoscaler
 	}
 
 	return mm
@@ -234,12 +263,17 @@ func (p *Popeye) Sanitize() (int, int, error) {
 			if err != nil {
 				log.Fatal().Err(err).Msg("Parse S3 bucket URI")
 			}
+
 			// Create a single AWS session (we can re use this if we're uploading many files)
 			s, err := session.NewSession(&aws.Config{
-				LogLevel: aws.LogLevel(aws.LogDebugWithRequestErrors)})
+				LogLevel: aws.LogLevel(aws.LogDebugWithRequestErrors),
+				Region:   p.flags.S3Region,
+				Endpoint: p.flags.S3Endpoint,
+			})
 			if err != nil {
 				log.Fatal().Err(err).Msg("Create S3 Session")
 			}
+
 			// Create an uploader with the session and default options
 			uploader := s3manager.NewUploader(s)
 			// Upload input parameters
@@ -287,17 +321,16 @@ func (p *Popeye) sanitize() (int, int, error) {
 	var total, errCount int
 	var nodeGVR = client.NewGVR("v1/nodes")
 	cache := scrub.NewCache(p.factory, p.config)
-	rev, err := p.factory.Client().ServerVersion()
+
+	rev, err := p.revision()
 	if err != nil {
 		return 0, 0, err
 	}
-
 	for k, fn := range p.sanitizers(rev) {
 		gvr := client.NewGVR(k)
 		if p.aliases.Exclude(gvr, p.config.Sections()) {
 			continue
 		}
-
 		// Skip node sanitizer if active namespace is set.
 		if gvr == nodeGVR && p.factory.Client().ActiveNamespace() != client.AllNamespaces {
 			continue
@@ -323,10 +356,10 @@ func (p *Popeye) sanitize() (int, int, error) {
 			close(c)
 		}
 	}
-
 	if count == 0 {
 		return errCount, 0, nil
 	}
+
 	return errCount, score / count, nil
 }
 

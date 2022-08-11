@@ -4,11 +4,13 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
+// BasicAuth tracks basic authentication.
 type BasicAuth struct {
 	User     *string
 	Password *string
 }
 
+// PushGateway tracks gateway representations.
 type PushGateway struct {
 	Address   *string
 	BasicAuth BasicAuth
@@ -31,6 +33,8 @@ type Flags struct {
 	Save            *bool
 	OutputFile      *string
 	S3Bucket        *string
+	S3Region        *string
+	S3Endpoint      *string
 	CheckOverAllocs *bool
 	AllNamespaces   *bool
 	Spinach         *string
@@ -52,6 +56,8 @@ func NewFlags() *Flags {
 		Save:            boolPtr(false),
 		OutputFile:      strPtr(""),
 		S3Bucket:        strPtr(""),
+		S3Region:        strPtr(""),
+		S3Endpoint:      strPtr(""),
 		InClusterName:   strPtr(""),
 		ClearScreen:     boolPtr(false),
 		CheckOverAllocs: boolPtr(false),

@@ -1,4 +1,4 @@
-<img src="assets/popeye_logo.png" align="right" width="250" height="auto">
+<img src="https://github.com/derailed/popeye/blob/master/assets/popeye_logo.png" align="right" width="250" height="auto">
 
 # Popeye - A Kubernetes Cluster Sanitizer
 
@@ -15,12 +15,14 @@ Popeye is a readonly tool, it does not alter any of your Kubernetes resources in
 [![codebeat badge](https://codebeat.co/badges/827e5642-3ccc-4ecc-b22b-5707dbc34cf1)](https://codebeat.co/projects/github-com-derailed-popeye-master)
 [![Build Status](https://travis-ci.com/derailed/popeye.svg?branch=master)](https://travis-ci.com/derailed/popeye)
 [![release](https://img.shields.io/github/release-pre/derailed/popeye.svg)](https://github.com/derailed/popeye/releases)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/mum4k/termdash/blob/master/LICENSE)
-[![Docker Repository on Quay](https://quay.io/repository/derailed/popeye/status "Docker Repository on Quay")](https://quay.io/repository/derailed/popeye)
+[![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/derailed/popeye/blob/master/LICENSE)
+[![docker](https://img.shields.io/docker/cloud/build/derailed/popeye?label=Docker&style=flat)](https://hub.docker.com/r/derailed/popeye/builds)
 ![GitHub stars](https://img.shields.io/github/stars/derailed/popeye.svg?label=github%20stars)
 [![Releases](https://img.shields.io/github/downloads/derailed/popeye/total.svg)]()
 
 ---
+
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/derailed/popeye)
 
 ## Installation
 
@@ -174,7 +176,7 @@ Example to save report in working directory in HTML format under the name "repor
 
 ### Save the report to S3
 
-You can also save the generated report to an AWS S3 bucket with providing the flag `--s3-bucket`. As parameter you need to provide the name of the S3 bucket where you want to store the report.
+You can also save the generated report to an AWS S3 bucket (or another S3 compatible Object Storage) with providing the flag `--s3-bucket`. As parameter you need to provide the name of the S3 bucket where you want to store the report.
 To save the report in a bucket subdirectory provide the bucket parameter as `bucket/path/to/report`.
 
 Underlying the AWS Go lib is used which is handling the credential loading. For more information check out the official [documentation](https://docs.aws.amazon.com/sdk-for-go/api/aws/session/).
@@ -185,10 +187,16 @@ Example to save report to S3:
 popeye --s3-bucket=NAME-OF-YOUR-S3-BUCKET/OPTIONAL/SUBDIRECTORY --out=json
 ```
 
-### Run public docker image locally
+If AWS sS3 is not your bag, you can further define an S3 compatible storage (OVHcloud Object Storage, Minio, Google cloud storage, etc...) using s3-endpoint and s3-region as so:
+
+```shell
+popeye --s3-bucket=NAME-OF-YOUR-S3-BUCKET/OPTIONAL/SUBDIRECTORY --s3-region YOUR-REGION --s3-endpoint URL-OF-THE-ENDPOINT
+```
+
+### Run public Docker image locally
 
 You don't have to build and/or install the binary to run popeye: you can just
-run it directly from the official docker repo on quay.io. The default command
+run it directly from the official docker repo on DockerHub. The default command
 when you run the docker container is `popeye`, so you just need to pass
 whatever cli args are normally passed to popeye.  To access your clusters, map
 your local kube config directory into the container with `-v` :
@@ -196,7 +204,7 @@ your local kube config directory into the container with `-v` :
 ```shell
   docker run --rm -it \
     -v $HOME/.kube:/root/.kube \
-    quay.io/derailed/popeye --context foo -n bar
+    derailed/popeye --context foo -n bar
 ```
 
 Running the above docker command with `--rm` means that the container gets
@@ -210,7 +218,7 @@ NOTE: You can override the default output directory location by setting `POPEYE_
     -v $HOME/.kube:/root/.kube \
     -e POPEYE_REPORT_DIR=/tmp/popeye \
     -v /tmp:/tmp \
-    quay.io/derailed/popeye --context foo -n bar --save --output-file my_report.txt
+    derailed/popeye --context foo -n bar --save --output-file my_report.txt
 
   # Docker has exited, and the container has been deleted, but the file
   # is in your /tmp directory because you mapped it into the container
@@ -331,6 +339,11 @@ popeye:
     limits:
       cpu:    80
       memory: 75
+
+  # Configure a list of allowed registries to pull images from
+  registries:
+    - quay.io
+    - docker.io
 ```
 
 ## Popeye In Your Clusters!
@@ -362,7 +375,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: popeye
-              image: quay.io/derailed/popeye
+              image: derailed/popeye
               imagePullPolicy: IfNotPresent
               args:
                 - -o
@@ -500,5 +513,5 @@ to make this project a reality!
 
 ---
 
-<img src="assets/imhotep_logo.png" width="32" height="auto"/>  &nbsp;© 2020 Imhotep Software LLC.
+<img src="https://github.com/derailed/popeye/blob/master/assets/imhotep_logo.png" width="32" height="auto"/>  &nbsp;© 2020 Imhotep Software LLC.
 All materials licensed under [Apache v2.0](http://www.apache.org/licenses/LICENSE-2.0)
